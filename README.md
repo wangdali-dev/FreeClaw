@@ -17,22 +17,23 @@
 
 ## 使用方式
 
-### 方式一：直接运行可执行文件
-<img width="1044" height="698" alt="image" src="https://github.com/user-attachments/assets/9aab98c6-1d8b-4836-8d4c-a0a650bdcd7d" />
+### 方式一：Release 下载（推荐给非开发者）
+
+从 GitHub Releases 下载 `OpenClawPortableLauncher.exe`，放在一个固定文件夹中运行（例如 `D:\FreeClaw\`）。
+
+启动器会把运行数据写到 exe 同级目录下的 `data/`，因此不建议频繁移动 exe。
 
 
-双击 `dist\OpenClawPortableLauncher.exe`，按界面提示完成安装并启动。
+### 方式二：源码运行（开发者）
 
-### 方式二：Python 运行
-
-在项目根目录执行：
+从仓库下载源码，执行：
 
 ```bash
 python main.py
 ```
 
 ## 运行流程（首次安装）
-
+<img width="1044" height="698" alt="image" src="https://github.com/user-attachments/assets/9aab98c6-1d8b-4836-8d4c-a0a650bdcd7d" />
 1. 选择模型（或填写自定义模型名）
 2. 点击“首次安装并启动”
 3. 启动器会自动下载依赖、拉取模型、写入配置并启动服务
@@ -52,7 +53,7 @@ python main.py
 - `data/`：运行时数据与模型
 - `build/`、`__pycache__/`
 
-如果需要发布可执行文件，建议通过 GitHub Releases 上传二进制文件。
+`OpenClawPortableLauncher.exe` 是源码的打包产物，建议通过 GitHub Releases 分发。
 
 ## 免责声明
 
