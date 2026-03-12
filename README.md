@@ -18,6 +18,8 @@
 ## 使用方式
 
 ### 方式一：直接运行可执行文件
+<img width="1044" height="698" alt="image" src="https://github.com/user-attachments/assets/9aab98c6-1d8b-4836-8d4c-a0a650bdcd7d" />
+
 
 双击 `dist\OpenClawPortableLauncher.exe`，按界面提示完成安装并启动。
 
