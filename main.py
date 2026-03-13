@@ -104,6 +104,8 @@ GIT_DIR = os.path.join(RUNTIME_DIR, "git")
 MODELS_DIR = os.path.join(DATA_DIR, "models")
 CONFIG_DIR = os.path.join(DATA_DIR, "config")
 LOGS_DIR = os.path.join(DATA_DIR, "logs")
+OPENCLAW_LOG_PATH = os.path.join(LOGS_DIR, "openclaw_startup.log")
+OLLAMA_LOG_PATH = os.path.join(LOGS_DIR, "ollama.log")
 OPENCLAW_CONFIG_PATH = os.path.join(CONFIG_DIR, "openclaw.json")
 OPENCLAW_STATE_DIR = os.path.join(DATA_DIR, "state")
 WORKSPACE_DIR = os.path.join(DATA_DIR, ".openclaw", "workspace")
@@ -137,6 +139,9 @@ class InstallerApp(tk.Tk):
         self.busy = False
         self.advanced_visible = False
         self.buttons = []
+        self.openclaw_log_cache = ""
+        self.ollama_log_cache = ""
+        self.status_check_inflight = False
         self._build_ui()
 
     def _build_ui(self):
@@ -264,30 +269,86 @@ class InstallerApp(tk.Tk):
             self.advanced_btn,
         ]
 
-        self.log = tk.Text(frame, height=self.log_height_normal, wrap=tk.WORD)
-        self.log.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
+        self.log_notebook = ttk.Notebook(frame)
+        self.log_notebook.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
+
+        launcher_tab = ttk.Frame(self.log_notebook)
+        openclaw_tab = ttk.Frame(self.log_notebook)
+        ollama_tab = ttk.Frame(self.log_notebook)
+        self.log_notebook.add(launcher_tab, text="启动器")
+        self.log_notebook.add(openclaw_tab, text="OpenClaw")
+        self.log_notebook.add(ollama_tab, text="Ollama")
+
+        self.log = tk.Text(launcher_tab, height=self.log_height_normal, wrap=tk.WORD)
+        self.log.pack(fill=tk.BOTH, expand=True)
         self.log.configure(state=tk.DISABLED)
+
+        self.openclaw_log = tk.Text(openclaw_tab, height=self.log_height_normal, wrap=tk.WORD)
+        self.openclaw_log.pack(fill=tk.BOTH, expand=True)
+        self.openclaw_log.configure(state=tk.DISABLED)
+
+        self.ollama_log = tk.Text(ollama_tab, height=self.log_height_normal, wrap=tk.WORD)
+        self.ollama_log.pack(fill=tk.BOTH, expand=True)
+        self.ollama_log.configure(state=tk.DISABLED)
         self.on_model_change()
+        self._refresh_file_logs()
         self.update_runtime_status()
 
     def toggle_advanced(self):
         self.advanced_visible = not self.advanced_visible
         if self.advanced_visible:
-            self.advanced_frame.pack(fill=tk.X, pady=(8, 0), before=self.log)
+            self.advanced_frame.pack(fill=tk.X, pady=(8, 0), before=self.log_notebook)
             self.advanced_toggle_text.set("高级选项 ▴")
         else:
             self.advanced_frame.pack_forget()
             self.advanced_toggle_text.set("高级选项 ▾")
-        self.log.configure(height=self.log_height_advanced if self.advanced_visible else self.log_height_normal)
+        height = self.log_height_advanced if self.advanced_visible else self.log_height_normal
+        self.log.configure(height=height)
+        self.openclaw_log.configure(height=height)
+        self.ollama_log.configure(height=height)
 
     def update_runtime_status(self):
         if self.busy:
             self.after(2000, self.update_runtime_status)
             return
+        if self.status_check_inflight:
+            self.after(2000, self.update_runtime_status)
+            return
+        self.status_check_inflight = True
+        thread = threading.Thread(target=self._run_status_check, daemon=True)
+        thread.start()
+
+    def _run_status_check(self):
         node_exe, node_source = resolve_node_exe()
         openclaw_cmd, openclaw_source = resolve_openclaw_cmd()
         ollama_exe, ollama_source = resolve_ollama_exe()
         _, git_source = resolve_git_dir()
+        gateway_ready = is_http_available(f"http://127.0.0.1:{GATEWAY_PORT}/", timeout=1)
+        ollama_ready = is_http_available("http://127.0.0.1:11434/", timeout=1)
+        payload = {
+            "node_exe": node_exe,
+            "node_source": node_source,
+            "openclaw_cmd": openclaw_cmd,
+            "openclaw_source": openclaw_source,
+            "ollama_exe": ollama_exe,
+            "ollama_source": ollama_source,
+            "git_source": git_source,
+            "gateway_ready": gateway_ready,
+            "ollama_ready": ollama_ready,
+        }
+        self.after(0, lambda: self._apply_status_check(payload))
+
+    def _apply_status_check(self, payload):
+        self.status_check_inflight = False
+        node_exe = payload["node_exe"]
+        node_source = payload["node_source"]
+        openclaw_cmd = payload["openclaw_cmd"]
+        openclaw_source = payload["openclaw_source"]
+        ollama_exe = payload["ollama_exe"]
+        ollama_source = payload["ollama_source"]
+        git_source = payload["git_source"]
+        gateway_ready = payload["gateway_ready"]
+        ollama_ready = payload["ollama_ready"]
         self.env_status_var.set(
             "环境: "
             f"Node {('已安装（' + node_source + '）') if node_exe else '未安装'} | "
@@ -295,8 +356,6 @@ class InstallerApp(tk.Tk):
             f"Ollama {('已安装（' + ollama_source + '）') if ollama_exe else '未安装'} | "
             f"Git {('已安装（' + git_source + '）') if git_source else '未安装'}"
         )
-        gateway_ready = is_http_available(f"http://127.0.0.1:{GATEWAY_PORT}/", timeout=1)
-        ollama_ready = is_http_available("http://127.0.0.1:11434/", timeout=1)
         self.gateway_status_var.set("Gateway: 运行中" if gateway_ready else "Gateway: 未运行")
         self.ollama_status_var.set("Ollama: 运行中" if ollama_ready else "Ollama: 未运行")
         if gateway_ready:
@@ -578,6 +637,24 @@ class InstallerApp(tk.Tk):
         self.log.insert(tk.END, text + "\n")
         self.log.see(tk.END)
         self.log.configure(state=tk.DISABLED)
+
+    def _refresh_file_logs(self):
+        self._update_file_log(self.openclaw_log, OPENCLAW_LOG_PATH, "openclaw_log_cache")
+        self._update_file_log(self.ollama_log, OLLAMA_LOG_PATH, "ollama_log_cache")
+        self.after(1500, self._refresh_file_logs)
+
+    def _update_file_log(self, widget, path, cache_attr):
+        lines = read_tail(path, max_lines=400)
+        content = "\n".join(lines)
+        if getattr(self, cache_attr) == content:
+            return
+        setattr(self, cache_attr, content)
+        widget.configure(state=tk.NORMAL)
+        widget.delete("1.0", tk.END)
+        if content:
+            widget.insert(tk.END, content + "\n")
+        widget.see(tk.END)
+        widget.configure(state=tk.DISABLED)
 
 
 def ensure_directories(log):
@@ -1001,7 +1078,16 @@ def ensure_ollama_running(log, ollama_exe):
     if result.returncode == 0 and not has_ollama_app_error(result):
         return None
     log("尝试启动 Ollama 服务")
-    process = subprocess.Popen(f"\"{ollama_exe}\" serve", shell=True, env=env, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    with open(OLLAMA_LOG_PATH, "a", encoding="utf-8") as log_file:
+        process = subprocess.Popen(
+            f"\"{ollama_exe}\" serve",
+            shell=True,
+            env=env,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+        )
     time.sleep(4)
     result = run_command(f"\"{ollama_exe}\" list", log, env=env, check=False)
     if result.returncode != 0 or has_ollama_app_error(result):
@@ -1103,7 +1189,7 @@ def start_openclaw_gateway(log, openclaw_cmd, node_exe):
     env["OLLAMA_API_KEY"] = "ollama-local"
     env["OLLAMA_MODELS"] = MODELS_DIR
     os.makedirs(LOGS_DIR, exist_ok=True)
-    log_path = os.path.join(LOGS_DIR, "openclaw_startup.log")
+    log_path = OPENCLAW_LOG_PATH
     gateway_cmd = f"\"{openclaw_cmd}\" gateway run --allow-unconfigured --dev --port {GATEWAY_PORT} --bind loopback --verbose"
     process = subprocess.Popen(
         gateway_cmd,
